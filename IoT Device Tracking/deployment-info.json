@@ -1,0 +1,8 @@
+{
+  "network": "sepolia",
+  "deviceRegistry": "0x49691b39e8946E2A7368291539733aE352720f39",
+  "iotDataLedger": "0x8FEF7FfE9453dA756D2ce5C941Fe5D3528f94e85",
+  "tokenRewards": "0x081b1f2ACE1C208FF932766746bA893Cd6418a23",
+  "oracleIntegration": "0x741ddAe8C9f0E5146670FB3f4c53Ca25b360e78a",
+  "timestamp": "2025-02-20T12:57:56.983Z"
+}
