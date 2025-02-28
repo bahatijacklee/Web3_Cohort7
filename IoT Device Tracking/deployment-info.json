@@ -1,8 +1,9 @@
 {
   "network": "sepolia",
-  "deviceRegistry": "0x49691b39e8946E2A7368291539733aE352720f39",
-  "iotDataLedger": "0x8FEF7FfE9453dA756D2ce5C941Fe5D3528f94e85",
-  "tokenRewards": "0x081b1f2ACE1C208FF932766746bA893Cd6418a23",
-  "oracleIntegration": "0x741ddAe8C9f0E5146670FB3f4c53Ca25b360e78a",
-  "timestamp": "2025-02-20T12:57:56.983Z"
+  "accessManager": "0x18C792C368279C490042E85fb4DCC2FB650CE44e",
+  "deviceRegistry": "0x7F87c05515b919b6611B8610EC68A0DF0ab9Dd25",
+  "iotDataLedger": "0xf6A7E3d41611FcAf815C6943807B690Ee9Bf8220",
+  "tokenRewards": "0xca276186Eb9f3a58FCdfc4adA247Cbe8d935778a",
+  "oracleIntegration": "0xdEE3BCB5D4d97d4BD857D984cEd59c9C48Ab5c49",
+  "timestamp": "2025-02-24T11:34:48.194Z"
 }

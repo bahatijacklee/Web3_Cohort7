@@ -1,0 +1,5 @@
+Copy-Item -Path "..\artifacts\contracts\AccessManager.sol\AccessManager.json" -Destination ".\src\abis\"
+Copy-Item -Path "..\artifacts\contracts\DeviceRegistry.sol\DeviceRegistry.json" -Destination ".\src\abis\"
+Copy-Item -Path "..\artifacts\contracts\IoTDataLedger.sol\IoTDataLedger.json" -Destination ".\src\abis\"
+Copy-Item -Path "..\artifacts\contracts\OracleIntegration.sol\OracleIntegration.json" -Destination ".\src\abis\"
+Copy-Item -Path "..\artifacts\contracts\TokenRewards.sol\TokenRewards.json" -Destination ".\src\abis\"

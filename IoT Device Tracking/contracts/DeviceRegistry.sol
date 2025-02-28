@@ -10,29 +10,35 @@ import "./AccessManager.sol";
 
 /**
  * @title DeviceRegistry
- * @dev Professional-grade IoT device management with gas optimization and advanced features
+ * @dev Manages IoT device lifecycle with ownership, status, and EIP-712 signatures
  */
 contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
     using ECDSA for bytes32;
 
+    // Immutable reference to AccessManager for role checks
     AccessManager public immutable accessManager;
+    
+    // Role constants (mirrored from AccessManager for clarity)
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant DEVICE_MANAGER_ROLE = keccak256("DEVICE_MANAGER");
+    
+    // EIP-712 typehash for signed registrations
     bytes32 private constant REGISTER_TYPEHASH = 
         keccak256("RegisterDevice(bytes32 deviceHash,string deviceType,string manufacturer,string model,string location)");
 
+    // Device status enum
     enum DeviceStatus { Inactive, Active, Suspended, Retired }
 
-    // Optimized storage layout
+    // Optimized device struct with packed fields
     struct Device {
-        address owner;
-        DeviceStatus status;
-        uint40 registrationDate;
-        uint40 lastUpdated;
-        string deviceType;     // Consider using bytes32 for fixed-size types
-        string manufacturer;
-        string model;
-        string location;
+        address owner;         // Device owner
+        DeviceStatus status;   // Current status
+        uint40 registrationDate; // Timestamp of registration
+        uint40 lastUpdated;    // Last update timestamp
+        string deviceType;     // Device type (e.g., "sensor")
+        string manufacturer;   // Manufacturer name
+        string model;          // Model identifier
+        string location;       // Physical location
     }
 
     struct DeviceView {
@@ -42,46 +48,24 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         uint256 registrationDate;
         uint256 lastUpdated;
         string deviceType;
-        string manufacturer;    // New field
-        string model;           // New field
-        string location;        // New field
+        string manufacturer;
+        string model;
+        string location;
     }
 
-    // Packed mappings
-    mapping(bytes32 => Device) private _devices;
-    mapping(address => bytes32[]) private _ownerDevices;
-    mapping(bytes32 => address) private _deviceOwners;
-    mapping(string => uint256) private _deviceTypeCounts;
-    
-    constructor(address _accessManager) EIP712("DeviceRegistry", "1.0") {
-        accessManager = AccessManager(_accessManager);
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(ADMIN_ROLE, msg.sender);
-        _setRoleAdmin(DEVICE_MANAGER_ROLE, ADMIN_ROLE);
-    }
+    // Storage mappings
+    mapping(bytes32 => Device) private _devices;               // Device data by hash
+    mapping(address => bytes32[]) private _ownerDevices;       // Devices per owner
+    mapping(bytes32 => address) private _deviceOwners;         // Quick owner lookup
+    mapping(string => uint256) private _deviceTypeCounts;      // Count of devices by type
 
-    // Events (indexed for efficient filtering)
-    event DeviceRegistered(
-        bytes32 indexed deviceHash,
-        address indexed owner,
-        string deviceType,
-        uint256 timestamp
-    );
-    event DeviceStatusUpdated(
-        bytes32 indexed deviceHash,
-        DeviceStatus newStatus,
-        address indexed updatedBy,
-        uint256 timestamp
-    );
-    event DeviceOwnershipTransferred(
-        bytes32 indexed deviceHash,
-        address indexed previousOwner,
-        address indexed newOwner,
-        uint256 timestamp
-    );
+    // Events for tracking
+    event DeviceRegistered(bytes32 indexed deviceHash, address indexed owner, string deviceType, uint256 timestamp);
+    event DeviceStatusUpdated(bytes32 indexed deviceHash, DeviceStatus newStatus, address indexed updatedBy, uint256 timestamp);
+    event DeviceOwnershipTransferred(bytes32 indexed deviceHash, address indexed previousOwner, address indexed newOwner, uint256 timestamp);
     event DeviceRetired(bytes32 indexed deviceHash, uint256 timestamp);
 
-    // Custom errors for gas optimization
+    // Custom errors for gas efficiency
     error DeviceExists();
     error DeviceNotFound();
     error Unauthorized();
@@ -91,17 +75,20 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
     error NotAdmin();
     error NotDeviceManager();
 
+    constructor(address _accessManager) EIP712("DeviceRegistry", "1.0") {
+        accessManager = AccessManager(_accessManager);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ADMIN_ROLE, msg.sender);
+        _setRoleAdmin(DEVICE_MANAGER_ROLE, ADMIN_ROLE);
+    }
+
     modifier onlyAdmin() {
-        if (!accessManager.hasRole(accessManager.GLOBAL_ADMIN_ROLE(), msg.sender)) {
-            revert NotAdmin();
-        }
+        if (!accessManager.hasRole(accessManager.GLOBAL_ADMIN_ROLE(), msg.sender)) revert NotAdmin();
         _;
     }
 
     modifier onlyDeviceManager() {
-        if (!accessManager.hasRole(accessManager.DEVICE_MANAGER_ROLE(), msg.sender)) {
-            revert NotDeviceManager();
-        }
+        if (!accessManager.hasRole(accessManager.DEVICE_MANAGER_ROLE(), msg.sender)) revert NotDeviceManager();
         _;
     }
 
@@ -110,9 +97,9 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         _;
     }
 
-    // Core Functions
-
-    /// @notice Registers a new device with EIP-712 signature support
+    /**
+     * @dev Registers a device with optional EIP-712 signature
+     */
     function registerDevice(
         bytes32 deviceHash,
         string calldata deviceType,
@@ -125,7 +112,9 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         _executeRegistration(deviceHash, deviceType, manufacturer, model, location, msg.sender);
     }
 
-    /// @notice Batch update device statuses (admin only)
+    /**
+     * @dev Batch updates device statuses (DEVICE_MANAGER only)
+     */
     function batchUpdateStatus(
         bytes32[] calldata deviceHashes,
         DeviceStatus[] calldata newStatuses
@@ -145,7 +134,9 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         }
     }
 
-    /// @notice Transfer ownership of a device
+    /**
+     * @dev Transfers device ownership
+     */
     function transferOwnership(bytes32 deviceHash, address newOwner) 
         external 
         onlyDeviceOwner(deviceHash) 
@@ -157,7 +148,6 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         _devices[deviceHash].owner = newOwner;
         _devices[deviceHash].lastUpdated = uint40(block.timestamp);
 
-        // Remove device from previous owner's list
         bytes32[] storage prevOwnerDevices = _ownerDevices[previousOwner];
         for (uint256 i; i < prevOwnerDevices.length; ) {
             if (prevOwnerDevices[i] == deviceHash) {
@@ -168,13 +158,13 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
             unchecked { ++i; }
         }
 
-        // Add device to new owner's list
         _ownerDevices[newOwner].push(deviceHash);
-
         emit DeviceOwnershipTransferred(deviceHash, previousOwner, newOwner, block.timestamp);
     }
 
-    /// @notice Update the status of a single device
+    /**
+     * @dev Updates a single device status (DEVICE_MANAGER only)
+     */
     function updateDeviceStatus(bytes32 deviceHash, DeviceStatus newStatus) 
         external 
         onlyDeviceManager 
@@ -188,7 +178,9 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         emit DeviceStatusUpdated(deviceHash, newStatus, msg.sender, block.timestamp);
     }
 
-    /// @notice Retire a device (mark as no longer in use)
+    /**
+     * @dev Retires a device (owner only)
+     */
     function retireDevice(bytes32 deviceHash) 
         external 
         onlyDeviceOwner(deviceHash) 
@@ -203,9 +195,9 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         emit DeviceRetired(deviceHash, block.timestamp);
     }
 
-    // View Functions
-
-    /// @notice Get paginated devices for an owner
+    /**
+     * @dev Gets paginated devices for an owner (for frontend)
+     */
     function getDevicesByOwnerPaginated(
         address owner,
         uint256 page,
@@ -236,8 +228,7 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         return result;
     }
 
-    // Internal Helpers
-
+    // Internal helpers
     function _validateRegistration(
         bytes32 deviceHash,
         string calldata deviceType,
@@ -291,7 +282,6 @@ contract DeviceRegistry is AccessControl, Pausable, ReentrancyGuard, EIP712 {
         _ownerDevices[owner].push(deviceHash);
         _deviceOwners[deviceHash] = owner;
         _deviceTypeCounts[deviceType]++;
-
         emit DeviceRegistered(deviceHash, owner, deviceType, block.timestamp);
     }
 

@@ -8,22 +8,20 @@ import "./interfaces/IDeviceRegistry.sol";
 import "./AccessManager.sol";
 
 contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
-    // Pack related storage variables together
     struct DataRecord {
-        bytes32 dataHash;     
-        bytes32 dataType;     
-        uint40 timestamp;     // Reduced from uint256 to uint40
-        address validator;    
-        bool isValidated;     // Added to save gas on validation checks
+        bytes32 dataHash;
+        bytes32 dataType;
+        uint40 timestamp;
+        address validator;
+        bool isValidated;
     }
 
     AccessManager public immutable accessManager;
     IDeviceRegistry public immutable deviceRegistry;
 
-    // Optimized storage layout
     mapping(bytes32 => DataRecord[]) private _deviceRecords;
-    
-    // Custom errors save gas compared to strings
+    mapping(bytes32 => uint256) private _validationCounts; // Added for efficiency
+
     error NotDataManager();
     error InvalidDevice();
     error InvalidData();
@@ -43,9 +41,6 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         _;
     }
 
-    // Core Functions
-
-    /// @dev Record single data point for a device
     function recordData(
         bytes32 deviceHash,
         bytes32 dataType,
@@ -53,11 +48,9 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
     ) external whenNotPaused nonReentrant {
         _verifyDeviceAccess(deviceHash);
         _validateInput(dataType, dataHash);
-        
         _storeRecord(deviceHash, dataType, dataHash);
     }
 
-    /// @dev Batch record data for multiple devices
     function batchRecordData(
         bytes32[] calldata deviceHashes,
         bytes32[] calldata dataTypes,
@@ -74,7 +67,6 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         }
     }
 
-    /// @dev Validate recorded data
     function validateData(
         bytes32 deviceHash,
         uint40 timestamp
@@ -82,11 +74,12 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         DataRecord[] storage records = _deviceRecords[deviceHash];
         bool found = false;
         
-        for (uint256 i; i < records.length; ) {
+        for (uint256 i; i < records.length;) {
             if (records[i].timestamp == timestamp) {
                 if (records[i].isValidated) revert AlreadyValidated();
                 records[i].validator = msg.sender;
                 records[i].isValidated = true;
+                _validationCounts[deviceHash]++; // Increment counter
                 found = true;
                 emit DataValidated(deviceHash, timestamp, msg.sender);
                 break;
@@ -97,9 +90,13 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         if (!found) revert InvalidData();
     }
 
-    // View Functions
+    // Added helper for OracleIntegration
+    function getTimestampByIndex(bytes32 deviceHash, uint256 index) external view returns (uint40) {
+        DataRecord[] storage records = _deviceRecords[deviceHash];
+        if (index >= records.length) return 0;
+        return records[index].timestamp;
+    }
 
-    /// @dev Get paginated records for a device
     function getRecords(
         bytes32 deviceHash,
         uint256 start,
@@ -110,14 +107,16 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         end = end > records.length ? records.length : end;
         
         DataRecord[] memory result = new DataRecord[](end - start);
-        for (uint256 i = start; i < end; ) {
+        for (uint256 i = start; i < end;) {
             result[i - start] = records[i];
             unchecked { ++i; }
         }
         return result;
     }
 
-    // Internal Helpers
+    function getValidationCount(bytes32 deviceHash) external view returns (uint256) {
+        return _validationCounts[deviceHash];
+    }
 
     function _verifyDeviceAccess(bytes32 deviceHash) internal view {
         if (!deviceRegistry.isDeviceActive(deviceHash)) revert InvalidDevice();
@@ -148,8 +147,6 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         emit DataRecorded(deviceHash, dataType, dataHash, newRecord.timestamp);
     }
 
-    // Admin Functions
-
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
@@ -158,15 +155,12 @@ contract IoTDataLedger is AccessControl, Pausable, ReentrancyGuard {
         _unpause();
     }
 
-    // Events
-
     event DataRecorded(
         bytes32 indexed deviceHash,
         bytes32 indexed dataType,
         bytes32 dataHash,
         uint40 timestamp
     );
-
     event DataValidated(
         bytes32 indexed deviceHash,
         uint40 timestamp,

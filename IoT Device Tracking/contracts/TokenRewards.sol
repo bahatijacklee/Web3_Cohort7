@@ -6,6 +6,10 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IIoTDataLedger.sol";
 import "./AccessManager.sol";
 
+/**
+ * @title TokenRewards
+ * @dev ERC20 token for rewarding valid IoT data with slashing mechanism
+ */
 contract TokenRewards is ERC20, ReentrancyGuard {
     // Custom errors
     error NotAdmin();
@@ -13,10 +17,11 @@ contract TokenRewards is ERC20, ReentrancyGuard {
     error NoRewardsAvailable();
     error InvalidPercentage();
 
+    // Immutable dependencies
     AccessManager public immutable accessManager;
     IIoTDataLedger public immutable dataLedger;
-    
-    // Pack related variables
+    address public immutable oracleIntegration;
+
     struct RewardConfig {
         uint128 rewardRate;
         uint128 slashPercentage;
@@ -24,7 +29,6 @@ contract TokenRewards is ERC20, ReentrancyGuard {
     
     RewardConfig private _config;
     
-    // Optimized storage layout
     mapping(address => uint256) public slashedBalances;
     mapping(bytes32 => mapping(address => uint256)) private _claimedRewards;
 
@@ -33,47 +37,35 @@ contract TokenRewards is ERC20, ReentrancyGuard {
     event RewardRateUpdated(uint256 newRate);
     event SlashPercentageUpdated(uint256 newPercentage);
 
-    constructor(address _accessManager, address _dataLedger) ERC20("IoT Data Credits", "IDC") {
+    constructor(address _accessManager, address _dataLedger, address _oracleIntegration) 
+        ERC20("IoT Data Credits", "IDC") 
+    {
         accessManager = AccessManager(_accessManager);
         dataLedger = IIoTDataLedger(_dataLedger);
+        oracleIntegration = _oracleIntegration;
         _config.rewardRate = 1 ether;
         _config.slashPercentage = 10;
     }
 
     modifier onlyAdmin() {
-        if (!accessManager.hasRole(accessManager.GLOBAL_ADMIN_ROLE(), msg.sender)) {
-            revert NotAdmin();
-        }
+        if (!accessManager.hasRole(accessManager.GLOBAL_ADMIN_ROLE(), msg.sender)) revert NotAdmin();
         _;
     }
 
     modifier onlyOracle() {
-        if (!accessManager.hasRole(accessManager.ORACLE_ROLE(), msg.sender)) {
-            revert NotOracle();
-        }
+        if (!accessManager.hasRole(accessManager.ORACLE_ROLE(), msg.sender)) revert NotOracle();
         _;
     }
 
-    /**
-     * @dev Users manually claim their rewards based on valid IoT data.
-     * @param deviceHash Hashed device identifier.
-     */
     function claimRewards(bytes32 deviceHash) external nonReentrant {
         uint256 claimableAmount = calculateRewards(deviceHash, msg.sender);
-        require(claimableAmount > 0, "No rewards available");
+        if (claimableAmount == 0) revert NoRewardsAvailable();
 
         _claimedRewards[deviceHash][msg.sender] += claimableAmount;
         _mint(msg.sender, claimableAmount);
-
         emit RewardsClaimed(msg.sender, claimableAmount);
     }
 
-    /**
-     * @dev Calculates unclaimed rewards for a user.
-     * @param deviceHash Hashed device identifier.
-     * @param operator Address to calculate rewards for.
-     * @return uint256 Unclaimed reward amount.
-     */
     function calculateRewards(bytes32 deviceHash, address operator) 
         public 
         view 
@@ -83,26 +75,19 @@ contract TokenRewards is ERC20, ReentrancyGuard {
         return (validRecords * _config.rewardRate) - _claimedRewards[deviceHash][operator];
     }
 
-    /**
-     * @dev Slashes rewards for invalid data reports (oracle-only).
-     * @param deviceHash Hashed device identifier.
-     * @param operator Operator address to penalize.
-     */
-    function slashRewards(bytes32 deviceHash, address operator) 
+    function slashRewards(bytes32, address operator) // Removed parameter name to silence warning
         external 
         onlyOracle 
         nonReentrant 
     {
         uint256 balance = balanceOf(operator);
         uint256 slashAmount = (balance * _config.slashPercentage) / 100;
+        if (slashAmount > balance) slashAmount = balance;
 
         _burn(operator, slashAmount);
         slashedBalances[operator] += slashAmount;
-
         emit RewardsSlashed(operator, slashAmount);
     }
-
-    // 🔹 Admin Functions (Platform Configuration)
 
     function setRewardRate(uint256 newRate) 
         external 
@@ -116,12 +101,10 @@ contract TokenRewards is ERC20, ReentrancyGuard {
         external 
         onlyAdmin 
     {
-        require(newPercentage <= 100, "Invalid percentage");
+        if (newPercentage > 100) revert InvalidPercentage();
         _config.slashPercentage = uint128(newPercentage);
         emit SlashPercentageUpdated(newPercentage);
     }
-
-    // 🔹 Read-Only Functions (For Frontend Tracking)
 
     function getUserBalance(address user) 
         public 
@@ -139,8 +122,7 @@ contract TokenRewards is ERC20, ReentrancyGuard {
         return slashedBalances[user];
     }
 
-    // Override decimals for precision
     function decimals() public pure override returns (uint8) {
-        return 6; // 6 decimal places for microcredits
+        return 6;
     }
 }
